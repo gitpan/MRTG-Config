@@ -5,7 +5,15 @@ use strict;
 use warnings;
 
 #---------------------------------------------------------#
+# Version
+#---------------------------------------------------------#
+
+our $VERSION = '0.02';
+
+
+#---------------------------------------------------------#
 # Exporter stuff - I don't think I need this tho.
+#---------------------------------------------------------#
 
 require Exporter;
 
@@ -18,35 +26,35 @@ our @ISA = qw(Exporter);
 # This allows declaration	use MRTG::Config ':all';
 # If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
 # will save memory.
-our %EXPORT_TAGS = ( 'all' => [ qw(
-	
-) ] );
+our %EXPORT_TAGS = ( 'all' => [ qw() ] );
 
 our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
 
-our @EXPORT = qw(
-	
-);
-#---------------------------------------------------------#
-# Version
+our @EXPORT = qw();
 
-our $VERSION = '0.01';
 
 #---------------------------------------------------------#
 # Dependencies
+#---------------------------------------------------------#
 
 use File::Spec;
 use File::Basename;
+use DBM::Deep;
+
 
 #---------------------------------------------------------#
 # Declarations for methods with checked-args
 # (sometimes I like those)
+#---------------------------------------------------------#
 
 sub loadparse($);
+sub target($);
+sub targets();
 
 
 #---------------------------------------------------------#
 # Constructor et. al.
+#---------------------------------------------------------#
 
 # If you specify a filename as an argument, you don't have 
 # to call loadparse separately.
@@ -63,13 +71,24 @@ sub new
                                 #  treated as if they were defined for all
                                 #  targets unless explicitly overridden.
 	$self->{TARGETS}     = {};  # Per-target config options.
+	
 	$self->{CONFIGLINES} = [];  # A list of arrays with info about each 
 	                            # 'useful' line in the config file(s)
+	                            # NOT persisted yet. See 
+								# comments in _persist_on()
+								
+	$self->{FIRST_FILE} = ""; # The first config file loaded.
+	                          # May be useful. (it is for me!)
 	
+	$self->{TGTCFG_MAP} = {}; # A hash that maps target names to
+	                          # the config file they came from.
+							  # I'm using this to keep the 
+							  # TARGETS hash 'pure'
+
 	# These are used if we turn on persistience:
 	$self->{PERSIST_DB}   = undef; # Handle to the DBM DB.
-	$self->{PERSIST_FILE} = "";    # File to store the DBM DB.
-								
+	$self->{PERSIST_FILE} = "";    # File to store the DBM DB.							  
+	
 	bless ($self, $class);
 	
 	# If an argument is specified, try to load and parse it as an MRTG config file.
@@ -81,16 +100,20 @@ sub new
 
 #---------------------------------------------------------#
 # Public methods
-
+#---------------------------------------------------------#
 
 #Loads and parses the given MRTG config file.
 sub loadparse($)
 {
     my $self = shift;
-    return $self->_parse_cfg_file(shift);
+	$self->{FIRST_FILE} = shift;
+    return $self->_parse_cfg_file($self->{FIRST_FILE});
 }
 
+#---------------------------------------------------------#
 
+# Just for debugging for now - returns a list of references
+# to the hashes that make up the parsed data, et. al.
 sub rawdata
 {
 	my $self = shift;
@@ -99,9 +122,13 @@ sub rawdata
 		$self->{TGTDEFAULTS}, 
 		$self->{TARGETS},
 		$self->{CONFIGLINES},
+		$self->{FIRST_FILE},
+		$self->{TGTCFG_MAP},
+		
 		);
 }
 
+#---------------------------------------------------------#
 
 # Toggles persistience - 
 # Using a true value turns persistience on 
@@ -124,31 +151,55 @@ sub persist
 	die 'WTF? This should *never* happen!';
 }
 
+#---------------------------------------------------------#
 
 # Returns a reference to the specified target's config hash,
 # undef if it does not exist. I may change it to {} though,
 # depending on how a loop might best be written.
-sub target 
+sub target($) 
 {
 	my $self = shift;
 	my $tgtId = shift;
 	return exists $self->{TARGETS}{$tgtId} ? \$self->{TARGETS}{$tgtId} : undef ;
 }
 
+#---------------------------------------------------------#
+
 # Returns a list of ALL available target names. (NOT their hashes)
-sub targets 
+sub targets() 
 {
 	my $self = shift;
 	return (keys %{$self->{TARGETS}});
 }
 
+#---------------------------------------------------------#
 
-# Returns a reference to a hash of the global MRTG directives.
+# Returns the name of the config file containing the 
+# directives for the specified target. If no target is
+# specified, returns the 'original' file, the one specified
+# to new() or loadparse(). Returns undef if the specified 
+# target does not exist;
+sub cfg_file 
+{
+	my $self = shift;
+	return $self->{FIRST_FILE} unless @_;
+	return $self->{TGTCFG_MAP}{+shift};
+}
+
+#---------------------------------------------------------#
+
+# Returns a reference to a hash of the global MRTG directives
+# from the specified file. If no file specified, returns the 
+# globals from the first file. Returns undef if the specified 
+# file is not found;
 sub globals 
 {
 	my $self = shift;
-	return $self->{GLOBALCFG};
+	return $self->{GLOBALCFG}{$self->{FIRST_FILE}} unless @_;
+	return $self->{GLOBALCFG}{+shift};
 }
+
+#---------------------------------------------------------#
 
 # Sets or gets the file to be used for the persistience DBM DB.
 # If setting, returns the previous value. If there was no 
@@ -161,6 +212,9 @@ sub persist_file
 	return $file; 
 }
 
+
+#---------------------------------------------------------#
+# Private methods
 #---------------------------------------------------------#
 
 # Initialize the DBM DB and store the MRTG data in it.
@@ -173,7 +227,7 @@ sub persist_file
 sub _persist_on
 {
 	my $self = shift;
-	use DBM::Deep;
+	#use DBM::Deep;
 	$self->{PERSIST_DB} = 
 		new DBM::Deep($self->{PERSIST_FILE})
 		|| return undef;
@@ -183,38 +237,51 @@ sub _persist_on
 	# We really shouldn't persist $self->{CONFIGLINES} -- 
 	# especially before loading the MRTG config. I do some
 	# nasty stuff to that array and DBM::Deep doesn't like
-	# very much at all.; :)
-	
-	# Also, there's really no need to persist $self->{TGTDEFAULTS}, AFAIC.
-	
-	# Bless our humble hashes - exists line just added... needs to be tested.
-	$persist_db->{GLOBALCFG} = {} unless exists $persist_db->{GLOBALCFG};
-	#$persist_db->{TGTDEFAULTS} = {} unless exists $persist_db->{TGTDEFAULTS};
-	$persist_db->{TARGETS} = {} unless exists $persist_db->{TARGETS};
-	#$persist_db->{CONFIGLINES} = [] unless exists $persist_db->{CONFIGLINES};
-	
-	# Import the data... DBM::Deep will call die() if something goes wrong.
-	$persist_db->{GLOBALCFG}   = $self->{GLOBALCFG}   if $self->{GLOBALCFG};
-	#$persist_db->{TGTDEFAULTS} = $self->{TGTDEFAULTS} if $self->{TGTDEFAULTS};
-	$persist_db->{TARGETS}     = $self->{TARGETS}     if $self->{TARGETS};
-	#$persist_db->{CONFIGLINES}-> import(@{$self->{CONFIGLINES}}); 
-	
-	# Now, swap our pointers!
-	$self->{GLOBALCFG}   = $persist_db->{GLOBALCFG};
-	#$self->{TGTDEFAULTS} = $persist_db->{TGTDEFAULTS};
-	$self->{TARGETS}     = $persist_db->{TARGETS};
-	#$self->{CONFIGLINES} = $persist_db->{CONFIGLINES};
-	
+	# it very much at all. ;)
+	# Also, there's really no need to persist 
+	# $self->{TGTDEFAULTS}, AFAICS.
+
+        $self->_link_db_hash($persist_db, $_) 
+           for qw(GLOBALCFG TARGETS TGTCFG_MAP);
+
+        $persist_db->{FIRST_FILE} = "" unless exists $persist_db->{FIRST_FILE};
+        $persist_db->{FIRST_FILE} = $self->{FIRST_FILE} if $self->{FIRST_FILE};
+        $self->{FIRST_FILE} = $persist_db->{FIRST_FILE};
+
 	return 1;
 }
 
+sub _link_db_hash
+{
+    my $self = shift;
+    my $persist_db = shift;
+    my $hashName = shift;
+    
+    my $selfHashRef = $self->{$hashName};
+    
+    # Bless our humble hash - exists line just added... needs to be tested.
+	$persist_db->{$hashName} = {} unless exists $persist_db->{$hashName};
+	
+	# Import the data... DBM::Deep will call die() if something goes wrong.
+	$persist_db->{$hashName} = $self->{$hashName}  if %$selfHashRef;
+	
+	# Now, swap our pointers!
+	$self->{$hashName} = $persist_db->{$hashName};
+	
+    return 1;    
+}
 
+
+#---------------------------------------------------------#
+
+# Turns off persistience, at least it would if I wrote the 
+# code to do it... dies right now.
 sub _persist_off
 {
 	die "Feature not implemented (Yet!)\n";
 }
 
-
+#---------------------------------------------------------#
 
 # Parses the directives from the MRTG config file, 
 # loading and parsing any Included files along the way.
@@ -224,17 +291,20 @@ sub _persist_off
 sub _parse_cfg_file
 {
     my $self = shift;
-    my $cfgFileName = shift;
+    my $mainCfgFileName = shift;
 
-    # Grab the directives from the config file
-    my $directiveLines = $self->_read_cfg_file($cfgFileName);
+    # Grab the directives from the first config file
+    my $directiveLines = $self->_read_cfg_file($mainCfgFileName);
     push @{$self->{CONFIGLINES}}, @$directiveLines;
 	$directiveLines = $self->{CONFIGLINES};
+	
+	# We want to keep track of the current file, as well as the first one, in case we have to deal with Includes.
+	my $curCfgFileName = $mainCfgFileName;
     
-    # These are the hashes we're building:
-    my $Global = $self->{GLOBALCFG};        
-    my $TgtDefaults = $self->{TGTDEFAULTS}; 
-    my $Targets = $self->{TARGETS};         
+    # These references may change depending on which file we're in.
+    $self->{GLOBALCFG}{$curCfgFileName} = {};
+    my $Global = $self->{GLOBALCFG}{$curCfgFileName};        
+    my $TgtDefaults = $self->{TGTDEFAULTS}{$curCfgFileName};        
 
     
     # Using a for-loop to force the condition check on each 
@@ -262,18 +332,19 @@ sub _parse_cfg_file
             warn "$lineText\n";
             die "LOLDEAD\n";
         }
-        
-        
+             
         # If the directive is an Include directive, we've got 
         # some _special_ work to do...
-        if ($directive =~ /^Include$/) 
+        if (lc($directive) =~ /^include$/) 
         {
             my $incFileName = $value;
             print "Include directive found: $incFileName\n" if $self->{DEBUG} > 1;
             unless (File::Spec->file_name_is_absolute($incFileName))
             {
-                my (undef,$cfgFileBaseDir,undef) = fileparse($cfgFileName);
-                my $baseDirPath = File::Spec->catfile($cfgFileBaseDir, $incFileName);
+				# Try to find the included file using the same logic
+				# that MRTG_lib uses (according to the docs)
+                my (undef,$mainCfgFileBaseDir,undef) = fileparse($mainCfgFileName);
+                my $baseDirPath = File::Spec->catfile($mainCfgFileBaseDir, $incFileName);
                 my $curDirPath = File::Spec->catfile(File::Spec->curdir(), $incFileName);
                 print "Possible include locations:\n" if $self->{DEBUG} > 2;
                 print "  $baseDirPath\n" if $self->{DEBUG} > 2;
@@ -282,8 +353,16 @@ sub _parse_cfg_file
                 if (-e $baseDirPath) { $incFileName = $baseDirPath }
                 elsif (-e $curDirPath) { $incFileName = $curDirPath } 
             }
+			# Did we find it? Load it up and insert the included lines into the queue!
             my $includeLines = $self->_read_cfg_file($incFileName);
             splice @$directiveLines, $idx+1,0, @$includeLines;
+
+			# Update the current file, and our data references.
+			$curCfgFileName = $value;
+			$self->{GLOBALCFG}{$curCfgFileName} = {};
+			$Global = $self->{GLOBALCFG}{$curCfgFileName};
+			$self->{TGTDEFAULTS}{$curCfgFileName} = {};        
+			$TgtDefaults = $self->{TGTDEFAULTS}{$curCfgFileName}; 
             next;
         }
         
@@ -294,7 +373,7 @@ sub _parse_cfg_file
         if ($directive =~ /\[_\]$/)  # TgtDefaults directive
         {
             $directive =~ s/\[_\]//;
-            $TgtDefaults->{$directive} = $value;
+            $TgtDefaults->{lc($directive)} = $value;
         }    
         elsif ($directive =~ /\[.*\]$/) # Target directive
         {
@@ -309,8 +388,8 @@ sub _parse_cfg_file
     	    while (my ($tdDname, $tdValue) = each %$TgtDefaults)
     	    {
     	        # Don't clobber directives that were already set.
-    	        $Targets->{$tname}{$tdDname} = $tdValue unless 
-    	           exists $Targets->{$tname}{$tdDname};
+    	        $self->{TARGETS}{$tname}{$tdDname} = $tdValue unless 
+    	           exists $self->{TARGETS}{$tname}{$tdDname};
     	    }
             
             # If we want to have any special handling of the data in $value
@@ -319,11 +398,15 @@ sub _parse_cfg_file
 			# of course. Keep the code clean... as much as possible...)
 			$value = $self->_process_td_value($value, $dname, $tname, $line);
     	    
-    	    $Targets->{$tname}{$dname} = $value;
+    	    $self->{TARGETS}{$tname}{$dname} = $value;
+			
+			# If the same target is listed in more than one file, that's just tough.
+			$self->{TGTCFG_MAP}{$tname} = $curCfgFileName 
+				unless exists $self->{TGTCFG_MAP}{$tname};
         }
         elsif ($directive !~ /\[/) # Global directive
         {
-            $Global->{$directive} = $value;
+            $Global->{lc $directive} = $value;
         }
         elsif ($directive =~ /\[\^\$\]$/) # pre and post - see MRTG docs.
         {
@@ -337,7 +420,6 @@ sub _parse_cfg_file
     }
     return 1;
 }
-
 
 #---------------------------------------------------------#
 
@@ -353,7 +435,7 @@ sub _process_td_value
 	return $value;
 }
 
-
+#---------------------------------------------------------#
 
 # Opens the specified file and returns a reference to an
 # array of MRTG config directives from it's contents.
@@ -426,10 +508,7 @@ sub _read_cfg_file
     return \@directiveLines;
 }
 
-
 #---------------------------------------------------------#
-
-
 
 # Parse the directive name and the target name out of a 
 # 'raw' Target-specific directive string. Returns the 
@@ -441,8 +520,8 @@ sub _parse_directive_name
     
     # Parse the Target and Directive names from $directive
     $directive =~ /(.*)\[(.*)\]/;
-    my $dname = $1;
-    my $tname = $2;
+    my $dname = lc $1;
+    my $tname = lc $2;
     
     # If the regex didn't match both, something's wrong.
     unless ($dname and $tname)
