@@ -16,7 +16,7 @@ use warnings;
 # Version
 #---------------------------------------------------------#
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
 
 
 #---------------------------------------------------------#
@@ -131,8 +131,7 @@ sub rawdata
 		$self->{TARGETS},
 		$self->{CONFIGLINES},
 		$self->{FIRST_FILE},
-		$self->{TGTCFG_MAP},
-		
+		$self->{TGTCFG_MAP},	
 		);
 }
 
