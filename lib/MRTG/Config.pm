@@ -1,4 +1,12 @@
+# -*- mode: perl -*-
+
 package MRTG::Config;
+
+# Copyright (c) 2007 Stephen R. Scaffidi <sscaffidi@cpan.org>
+# All rights reserved.
+
+# This program is free software; you may redistribute it and/or modify it
+# under the same terms as Perl itself.
 
 use 5.008008;
 use strict;
@@ -208,7 +216,7 @@ sub persist_file
 {
 	my $self = shift;
 	my $file = $self->{PERSIST_FILE};
-	$self->{PERSIST_FILE} = shift if @_;;
+	$self->{PERSIST_FILE} = shift if @_;
 	return $file; 
 }
 
@@ -540,17 +548,54 @@ sub _parse_directive_name
 
 1;
 __END__
-# Below is stub documentation for your module. You'd better edit it!
+
 
 =head1 NAME
 
 MRTG::Config - Perl module for parsing MRTG configuration files
 
+=head1 WARNING
+
+This module, while reliable right now, is still in ALPHA stages
+of development... The API/methods may change. Behaviors of 
+methods will almost certainly change. The internal structure of
+data will change, as will many other things.
+
+I will try to always release 'working' versions, but anyone who expects
+their code that uses this module to continue working shouldn't... until
+I remove this warning.
+
 =head1 SYNOPSIS
+
+Ever have the need to parse an MRTG config file? I have. I needed
+to parse lots and lots of them. Using the functions built-in to 
+C<MRTG_lib> was too slow, too complex, and used too much RAM and CPU 
+time for my poor web server to handle - and the data structures
+C<MRTG_lib> built were I<way> more complex than I needed.
+
+MRTG::Config can load and parse MRTG and MRTG-style confiuguration 
+files very quickly, and the parsed directives, targets and values
+can be located, extracted, and manipulated through an OO interface.
+
+This module is intended to focus on correctly parsing the I<format>
+of an MRTG configuration, regardless of whether or not the directives
+and values, etc. are I<valid> for MRTG. I am using both the parsing
+behavior of C<MRTG_lib>'s C<readcfg()> function and the description of the
+format on the MRTG website as my guidelines on how to correctly parse
+these configuration files. I am still a short way off that goal, but
+this module is currently being used in a production environment with
+great success!
+
+=head1 PLEA FOR MERCY
 
 I plan on adding to this documentation and making it better 
 organized soon, but I'm willing to answer questions directly 
-in the mean time.
+in the mean time. Also, this is my first module, written in 
+a hurry to appease some disgruntled engineers. I I<do> plan on
+continuing to improve it, so any input, positive I<or> negative
+is certainly welcome!
+
+=head1 USAGE EXAMPLE
 
   use MRTG::Config;
 
@@ -560,39 +605,52 @@ in the mean time.
   my $mrtgCfg = new MRTG::Config;
   
   $mrtgCfg->loadparse($cfgFile);
+  
+  # Want to store the parsed data for use later or by
+  # another program?
   $mrtgCfg->persist_file($persist_file);
   $mrtgCfg->persist(1);
   
   foreach my $tgtName (@{$mrtgCfg->targets()}) {
     my $tgtCfg = $mrtgCfg->target($tgtName);
-	print $tgtCfg->{Title} . "\n"; # Let's assume every target has a Title.
+    # Let's assume every target has a Title.
+	print $tgtCfg->{title} . "\n"; 
   }
   
+  # globals() has some, um, interesting things you
+  # should know. Please read about it below... 
   my $globalCfg = $mrtgCfg->globals();
-  print $globalCfg->{WorkDir} . "\n"; # Let's assume WorkDir is set.
 
-=head1 DESCRIPTION -or- LOTS OF WORDS ABOUT A LITTLE MODULE
+  # Let's assume WorkDir is set.
+  print $globalCfg->{workdir} . "\n"; 
+
+
+=head1 DETAILED DESCRIPTION -or- LOTS OF WORDS ABOUT A LITTLE MODULE
 
 I couldn't find any modules on CPAN that would parse MRTG config files,
-and Tobi's code in MRTG_lib is too slow and too complicated for my needs.
+and Tobi's code in C<MRTG_lib> is too slow and too complicated for my needs.
 
 This module will load a given MRTG configuration file, following Include
 statements, and build a set of hashes representing the confiration 
 keywords, targets, and values.
 
 It's _much_ faster than Tobi's code, but it also does not build a data
-structure _nearly_ as deep and complex.
+structure I<nearly> as deep and complex.
 
-It *does*, however, properly handle a number of facilities of the MRTG 
+It B<does>, however, properly handle a number of facilities of the MRTG 
 configuration file format that are specified in the MRTG documentation.
+
+=head2 Multi-Line Values
 
 The parsing code correctly handles directives where the value spans 
 multiple lines (sucessive lines after the first begin with whitespace).
 Each line of the value is contatenated together, including newlines.
 
+=head2 Include Directives
+
 Include directives are also handled. When an Include is encountered, the
 value is used as the name of another MRTG configuration file to parse.
-Like in MRTG_lib, if the path is not absolute (beginning with / or C:\
+Like in C<MRTG_lib>, if the path is not absolute (beginning with / or C:\
 or whatever your system uses) this file is looked for first in the same
 directory as the original configuration file, and then in the current
 working directory.
@@ -603,12 +661,14 @@ contents of the included file were simply copied into that position in
 the original file.
 
 While I have not yet tested it, I believe 'nested' includes are followed,
-and the same search and loading rules apply. The path of the _first_
-config file is _always_ used when looking for included files.
+and the same search and loading rules apply. The path of the I<first>
+config file is I<always> used when looking for included files.
 
-WARNING: There is *no* loop-checking code. If File A includes File B and
-File B includes File A, the parser will run until your system goes p00f,
+B<WARNING:> There is B<no> loop-checking code. If File A includes File B and
+File B includes File A, the parser will run until your system goes B<p00f>,
 eating up memory the whole way.
+
+=head2 The [_] Target
 
 This module understands directives for the [_] (default) target and will
 interpolate these directives into all the targets that follow the 
@@ -619,47 +679,137 @@ From what I can tell, in Tobi's implementation, [_] directives are only
 applied to targets that follow the definition of that particular directive.
 This module does likewise. Also, if a [_] directive is redefined later in
 the configuration, it's new value is used for all future targets. Targets
-that have already had that directive interpolated are *not* updated.
+that have already had that directive interpolated are B<not> updated.
 
-Also, if a particular target has a directive or directives defined more 
+For configs that use includes to span multiple files, definitions for the
+[_] target go 'out of scope' when parsing new files. This is buggy behavior
+that will soon be fixed, or become adjustable.
+
+=head2 Duplicate Directives and Targets
+
+WARNING: I don't remember if this is the behavior C<MRTG_lib> applies. I need 
+to revisit the code and docs.
+
+If a particular target has a directive or directives defined more 
 than once, the last definition in the file 'wins'. The same applies to 
-the [_] target, and also to global directives.
+the [_] target, and also to global directives. HOWEVER: globals and [_]
+definitions go 'out of scope' when another cfg file is included. Again,
+this is buggy behavior that will soon be fixed, or become adjustable.
 
-This module is capable of some degree of persistience, by way of DBM::Deep.
+=head2 Persistience
+
+This module is capable of some degree of persistience, by way of L<DBM::Deep|DBM::Deep>.
 Using persistience will allow you to do all sorts of interesting things, 
 which I will not get into right now, but if you're creative I'll bet you've
 already thought of some! Right now, only Global and target-specific 
 directives are persisted.
 
+=head3 Performance
+
 Please note - I've found that performance with DBM::Deep varies WIDELY 
-depending on what version of DBM::Deep you are using, and wether or 
+depending on what version of DBM::Deep you are using, and whether or 
 not you allow cpan to upgrade it's dependencies - When I allowed cpan
 to update everything, performance dropped by AN ORDER OF MAGNITUDE.
 
-For best performance, I suggest using DBM::Deep .94 and whatever 
+For best performance, I suggest using L<DBM::Deep|DBM::Deep> .94 and whatever 
 versions of various core modules that come with Perl 5.8.8.
 
+=head2 Testing (or lack thereof)
+
 Most of my testing has been done on a stock Ubuntu 7.04. Some 
-testing has been done on Windows XP SP2 with ActiveState Perl 5.8.8
+testing has been done on Windows XP SP2 with ActiveState Perl 5.8.8.
 
-=head2 SUPPORT
+I'll try to write some more about my tests when I do some better testing.
 
-Please email me if you have *any* questions, complaints, comments, 
+=head1 METHODS
+
+=head2 targets()
+
+Returns a list of the names of MRTG targets in the parsed config.
+
+  my @targetNames = $mrtgCfg->targets();
+
+=head2 target()
+
+Returns a reference to a hash of config directives for a specific Target,
+given it's name in lower-case.
+
+  my $tgtCfg = $mrtgCfg->target($tgtName);
+  print $tgtCfg->{maxbytes};
+
+=head2 cfg_file()
+
+Returns the name of the loaded config file. In the case of Configs using
+Includes, returns the name of the B<first> config file.
+
+  my $cfgFile = $mrtgCfg->cfg_file();
+  print $cfgFile;
+
+If you are using Includes... you may want to know in which file a specific
+target was defined. You do that by passing in the name of the target, in
+lower-case.
+
+  my $tgtCfgFile = $mrtgCfg->cfg_file($tgtName);
+  print $tgtCfgFile;
+
+NOTE: If directives for a target were specified in more than one file, the 
+one that the target was specified in FIRST is the one returned.
+
+=head2 globals()
+
+Returns a reference to a hash of Global config directives
+
+  my $cfgGlobals = $mrtgCfg->globals();
+  print $cfgGlobals->{workdir};
+
+If there were included files, the above code currently returns the globals
+found ONLY in the first, original file. If you want the globals found in an
+Included file, pass the name of that file (the value used in the Include 
+directive that caused it to be loaded) as an argument:
+
+  my $incFileGlobals = $mrtgCfg->globals($fileName);
+  print $incFileGlobals->{workdir};
+ 
+I'm fairly certain this behavior is NOT true to how MRTG operates, but it's
+what currently best serves my needs... I do plan on making alterations to
+support the correct behavior in a future update.
+
+
+=head1 SUPPORT
+
+Please email me if you have B<any> questions, complaints, comments, 
 compliments, suggestions, requests, patches, or alcoholic beverages 
 you'd like to share. The more feedback I can get, the better I can
 make this module!
 
-=head2 EXPORT
+Please make note, though - I can not be held responsible for any 
+problems that bugs in this module or it's dependencies may cause.
+That being said, I'll do my best to prevent that possibility.
 
-None by default.
+=head1 EXPORT
+
+Nothing by default.
+
+=head1 TO-DO
+
+1. Fix bugs
+2. Fix bugs.
+3. Eat a sandwich.
+4. Clean up code (stupid editor breaks my indentation)
+5. Clean up code (stupid me writes some sloppy perl)
+6. goto 1
+
+Also - I need to start writing tests. This release (0.03) is currently un-tested.
 
 =head1 SEE ALSO
 
 http://oss.oetiker.ch/mrtg/ or http://www.mrtg.org/
 
+L<DBM::Deep|DBM::Deep>
+
 =head1 AUTHOR
 
-Stephen R. Scaffidi
+Stephen R. Scaffidi (sscaffidi@cpan.org)
 
 =head1 COPYRIGHT AND LICENSE
 

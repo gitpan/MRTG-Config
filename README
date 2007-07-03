@@ -1,9 +1,10 @@
-MRTG-Config version 0.01
+MRTG-Config version 0.03
 ========================
-
+ * Bugfixes, documentation, added functionality (2007.06.28)
+ * Bugfixes, documentation, added functionality (2007.06.26)
  * Initial release (2007.06.22)
 
-Please read the POD and source for more info.
+Please read the POD, source, and Changes files for more info.
 
 INSTALLATION
 
@@ -21,8 +22,6 @@ This module requires these other modules and libraries:
    DBM::Deep (when using persistience)
 
 COPYRIGHT AND LICENCE
-
-Put the correct copyright and licence information here.
 
 Copyright (C) 2007 by Stephen R. Scaffidi
 

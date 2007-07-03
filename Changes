@@ -1,5 +1,11 @@
 Revision history for Perl extension MRTG::Config.
 
+0.03 Thu Jun 28 14:59:07 2007
+    - Added some new methods, I don't know which.
+    - Squashed some bugs
+    - Greatly improved documentation.
+    - Fixed missing Makefile dependency (Thanks to jagh at perlmonks.org!)
+
 0.02 Sat Jun 23 11:55:03 2007
     - Added some new methods, I don't know which.
     - Squashed some bugs
